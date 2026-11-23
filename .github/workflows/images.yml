@@ -1,0 +1,75 @@
+name: Build and Push Altare Images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test-connector:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: raft-connector
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: raft-connector/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  build-images:
+    needs: [test-connector]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: magpie
+            context: ./magpie
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/magpie:stable
+              ghcr.io/${{ github.repository_owner }}/magpie:latest
+          - name: raft-worker
+            context: ./raft-worker
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/raft-worker:v0.1.0
+              ghcr.io/${{ github.repository_owner }}/raft-worker:latest
+          - name: raft-connector
+            context: ./raft-connector
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/raft-connector:v0.1.0
+              ghcr.io/${{ github.repository_owner }}/raft-connector:latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ matrix.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
