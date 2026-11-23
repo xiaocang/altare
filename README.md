@@ -4,7 +4,7 @@ Container images and Altare deployment notes for the 4-app setup:
 
 | # | Altare App | Image | RAM / CPU / Disk | Role |
 |---|---|---|---|---|
-| 1 | `magpie` | `ghcr.io/xiaocang/magpie:stable` | 2 GB / 50% / 3.5 GB | Unified model gateway (Web UI + API, `/config` persisted) |
+| 1 | `magpie` | `ghcr.io/xiaocang/magpie:stable` | 2 GB / 50% / 3.5 GB | Unified model gateway (Web UI + API, `/data` persisted, `agy` preinstalled) |
 | 2 | `research-review` | `ghcr.io/xiaocang/raft-worker:v0.1.0` | 1.5 GB / 25% / 2 GB | Public research & light review Raft Computer worker |
 | 3 | `verifier` | `ghcr.io/xiaocang/raft-worker:v0.1.0` | 1 GB / 25% / 1.5 GB | CI/version/hash/release-manifest verifier Raft Computer |
 | 4 | `raft-readonly` | `ghcr.io/xiaocang/raft-connector:v0.1.0` | 1 GB / 25% / 1.5 GB | Read-only HTTP & MCP status/task connector for chatbots |
@@ -13,13 +13,18 @@ Container images and Altare deployment notes for the 4-app setup:
 
 ### 1. `magpie` (`ghcr.io/xiaocang/magpie:stable`)
 
-Thin wrapper over `ghcr.io/yetone/magpie:stable`. Altare mounts Data folders as `root:root`, so the wrapper ensures `/config/{magpie,cache/magpie,home,data,state}` exist, runs `chown -R 65532:65532 /config`, and drops privileges back to `65532:65532` (`nonroot`) before running `/magpie "$@"`.
+Extends `ghcr.io/yetone/magpie:stable` with the Antigravity CLI (`/usr/local/bin/agy`) preinstalled for `@magpie-community/opencode-agy-cli-auth`, while preserving the upstream `nonroot` (`65532:65532`) user and `/magpie` entrypoint (no `setpriv`, which Altare's runtime disallows).
 
 Altare configuration:
-- **Port**: `3430` (serves Magpie Web UI over HTTPS; gateway `3425` stays internal via `http://magpie.internal:3425`)
-- **Data folder**: `/config`
+- **Port**: `39999` (internal-only via `.internal` private network; set `3430` only when exposing Web UI over HTTPS)
+- **Data folder**: `/data`
 - **Start command**: `web --addr 0.0.0.0:3430 --no-open`
 - **Variables**:
+  - `HOME=/data/home`
+  - `XDG_CONFIG_HOME=/data`
+  - `XDG_CACHE_HOME=/data/cache`
+  - `XDG_DATA_HOME=/data/data`
+  - `XDG_STATE_HOME=/data/state`
   - `MAGPIE_WEB_KEY=<strong-random-secret>`
 
 ### 2. `raft-worker` (`ghcr.io/xiaocang/raft-worker:v0.1.0`)
